@@ -89,7 +89,7 @@ function DashboardContent() {
   const [mapping, setMapping] = useState<Partial<ColumnMapping>>({});
   const [skuLabel, setSkuLabel] = useState("Manual Entry");
   const [skuSummaries, setSkuSummaries] = useState<SkuSummary[]>([]);
-  const [aiModel, setAiModel] = useState("gpt-4o-mini");
+  const [aiModel, setAiModel] = useState("gpt-4o");
 
   useEffect(() => {
     setParams((p) => ({ ...p, rates: feeRates }));
@@ -319,10 +319,10 @@ function DashboardContent() {
                   aria-label="AI model selection"
                   className="text-xs text-slate-700 border border-slate-200 rounded-xl px-2 py-1.5 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 >
-                  <option value="gpt-4o-mini">GPT-4o Mini</option>
-                  <option value="gpt-4o">GPT-4o</option>
+                  <option value="gpt-4o">GPT-4o (Latest)</option>
+                  <option value="gpt-4o-mini">GPT-4o Mini (Fast)</option>
                   <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Budget)</option>
                 </select>
               </div>
             )}

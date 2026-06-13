@@ -8,10 +8,10 @@ interface Message {
 }
 
 const MODELS = [
-  { value: "gpt-4o-mini", label: "GPT-4o Mini" },
-  { value: "gpt-4o", label: "GPT-4o" },
+  { value: "gpt-4o", label: "GPT-4o (Latest)" },
+  { value: "gpt-4o-mini", label: "GPT-4o Mini (Fast)" },
   { value: "gpt-4-turbo", label: "GPT-4 Turbo" },
-  { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo" },
+  { value: "gpt-3.5-turbo", label: "GPT-3.5 Turbo (Budget)" },
 ];
 
 const STARTERS = [
@@ -30,7 +30,7 @@ interface Props {
 export default function AIChat({ context, isPremium, onUpgradeClick }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
-  const [model, setModel] = useState("gpt-4o-mini");
+  const [model, setModel] = useState("gpt-4o");
   const [streaming, setStreaming] = useState(false);
   const [open, setOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
