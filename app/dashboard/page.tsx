@@ -191,31 +191,35 @@ function DashboardContent() {
       return;
     }
     try {
-      const res = await fetch("/api/razorpay/create-subscription", { method: "POST" });
-      const { subscriptionId, keyId, error } = await res.json() as {
-        subscriptionId?: string; keyId?: string; error?: string;
+      const res = await fetch("/api/razorpay/create-order", { method: "POST" });
+      const { orderId, amount, currency, keyId, error } = await res.json() as {
+        orderId?: string; amount?: number; currency?: string; keyId?: string; error?: string;
       };
-      if (error || !subscriptionId) { alert(error ?? "Could not start checkout."); return; }
+      if (error || !orderId) { alert(error ?? "Could not start checkout."); return; }
       await loadRazorpay();
       const rzp = new window.Razorpay({
         key: keyId,
-        subscription_id: subscriptionId,
+        amount,
+        currency,
+        order_id: orderId,
         name: "FBA Liquidation Simulator",
         description: "Premium — $19/month",
         theme: { color: "#4f46e5" },
+        modal: {
+          ondismiss: () => {},
+        },
         handler: async (response: {
           razorpay_payment_id: string;
-          razorpay_subscription_id: string;
+          razorpay_order_id: string;
           razorpay_signature: string;
         }) => {
-          const v = await fetch("/api/razorpay/verify", {
+          const v = await fetch("/api/razorpay/verify-payment", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(response),
           });
           const { success, error: ve } = await v.json() as { success?: boolean; error?: string };
           if (ve || !success) { alert("Payment verification failed."); return; }
-          // Refresh premium status from Supabase
           const supabase = createClient();
           const { data } = await supabase
             .from("profiles")
