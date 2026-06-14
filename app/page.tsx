@@ -100,8 +100,17 @@ export default function LandingPage() {
       </div>
 
       <footer className="py-8 border-t border-slate-100 text-center text-xs text-slate-400">
-        © {new Date().getFullYear()} FBA Liquidator · Built for Amazon FBA sellers ·{" "}
-        <Link href="/billing" className="hover:text-slate-600">Account</Link>
+        <div className="flex items-center justify-center gap-3 flex-wrap">
+          <span>© {new Date().getFullYear()} FBA Liquidator</span>
+          <span>·</span>
+          <span>Built for Amazon FBA sellers</span>
+          <span>·</span>
+          <Link href="/billing" className="hover:text-slate-600">Account</Link>
+          <span>·</span>
+          <Link href="/privacy" className="hover:text-slate-600">Privacy Policy</Link>
+          <span>·</span>
+          <Link href="/terms" className="hover:text-slate-600">Terms of Service</Link>
+        </div>
       </footer>
     </main>
   );
