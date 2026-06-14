@@ -28,6 +28,10 @@ export default function LandingPage() {
   const handleUpgrade = useCallback(async () => {
     try {
       const res = await fetch("/api/razorpay/create-order", { method: "POST" });
+      if (res.status === 401) {
+        window.location.href = "/auth/login?next=/dashboard&upgrade=1";
+        return;
+      }
       const { orderId, amount, currency, keyId, error } = await res.json() as {
         orderId?: string; amount?: number; currency?: string; keyId?: string; error?: string;
       };
