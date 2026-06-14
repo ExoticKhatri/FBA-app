@@ -54,12 +54,11 @@ export default function LandingPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(response),
           });
-          const { token, error: ve } = await v.json() as { token?: string; error?: string };
-          if (ve || !token) {
+          const { success, error: ve } = await v.json() as { success?: boolean; error?: string };
+          if (ve || !success) {
             alert("Payment could not be verified. Contact support.");
             return;
           }
-          localStorage.setItem("fba_premium_token", token);
           window.location.href = "/dashboard";
         },
       });

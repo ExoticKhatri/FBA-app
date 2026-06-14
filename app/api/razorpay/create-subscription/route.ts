@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
+import { createClient } from "@/utils/supabase/server";
 
 // POST /api/razorpay/create-subscription
 // Creates a Razorpay subscription and returns the subscription_id for checkout.
+// Requires an authenticated session — unauthenticated callers cannot trigger billing.
 export async function POST() {
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
+
   const keyId = process.env.RAZORPAY_KEY_ID;
   const keySecret = process.env.RAZORPAY_KEY_SECRET;
   const planId = process.env.RAZORPAY_PLAN_ID;
@@ -20,7 +27,7 @@ export async function POST() {
   const body = {
     plan_id: planId,
     quantity: 1,
-    total_count: 120, // 10-year cap; effectively unlimited
+    total_count: 120,
     notify_info: {},
   };
 
@@ -50,6 +57,3 @@ export async function POST() {
 
   return NextResponse.json({ subscriptionId: data.id, keyId });
 }
-
-// Suppress unused import lint — crypto is used via the global scope in verify route
-void crypto;

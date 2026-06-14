@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { createClient } from "@/utils/supabase/server";
 
 export interface ChatContext {
   skuLabel: string;
@@ -20,49 +21,107 @@ export interface ChatContext {
   removalNet12M: number;
 }
 
+const ALLOWED_MODELS = new Set(["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]);
+const MAX_MESSAGES = 20;
+const MAX_CONTENT_LENGTH = 2000;
+
+function safeNum(v: unknown, fallback = 0): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function buildSystemPrompt(ctx: ChatContext): string {
-  const disc = (ctx.aggressiveDiscountPct * 100).toFixed(0);
+  const label = String(ctx.skuLabel ?? "Unknown SKU").slice(0, 100).replace(/[\r\n]/g, " ");
+  const qty = safeNum(ctx.quantity);
+  const oversize = Boolean(ctx.isOversize);
+  const age = safeNum(ctx.ageInDays);
+  const velocity = safeNum(ctx.monthlySalesVelocity);
+  const price = safeNum(ctx.currentPrice);
+  const cost = safeNum(ctx.landedCost);
+  const volume = safeNum(ctx.totalVolumeCubicFeet);
+  const disc = (safeNum(ctx.aggressiveDiscountPct) * 100).toFixed(0);
+  const doNothing = safeNum(ctx.doNothingNet12M);
+  const discount = safeNum(ctx.discountNet12M);
+  const outlet = safeNum(ctx.outletNet12M);
+  const removal = safeNum(ctx.removalNet12M);
+  const fees = safeNum(ctx.projected12MFees);
+  const date = String(ctx.optimalLiquidationDate ?? "N/A").slice(0, 30).replace(/[\r\n]/g, "");
+  const capital = safeNum(ctx.capitalRecoverable);
+
   return `You are an expert Amazon FBA inventory analyst. A seller is using the FBA Liquidation Simulator and needs your advice.
 
 Current simulation data:
-- Product / SKU: ${ctx.skuLabel}
-- Quantity: ${ctx.quantity} units (${ctx.isOversize ? "Oversize" : "Standard-size"})
-- Age in FBA: ${ctx.ageInDays} days
-- Monthly sales velocity: ${ctx.monthlySalesVelocity} units/month
-- Selling price: $${ctx.currentPrice.toFixed(2)}/unit | Landed cost: $${ctx.landedCost.toFixed(2)}/unit
-- FBA storage volume: ${ctx.totalVolumeCubicFeet.toFixed(2)} cubic feet
+- Product / SKU: ${label}
+- Quantity: ${qty} units (${oversize ? "Oversize" : "Standard-size"})
+- Age in FBA: ${age} days
+- Monthly sales velocity: ${velocity} units/month
+- Selling price: $${price.toFixed(2)}/unit | Landed cost: $${cost.toFixed(2)}/unit
+- FBA storage volume: ${volume.toFixed(2)} cubic feet
 
 12-month projection results:
-- Do Nothing net: $${ctx.doNothingNet12M.toFixed(0)}
-- ${disc}% Discount strategy net: $${ctx.discountNet12M.toFixed(0)}
-- Amazon Outlet net: $${ctx.outletNet12M.toFixed(0)}
-- Removal Order net: $${ctx.removalNet12M.toFixed(0)}
-- Projected 12-month storage fees: $${ctx.projected12MFees.toFixed(0)}
-- Optimal liquidation start: ${ctx.optimalLiquidationDate}
-- Capital recoverable via discounting vs. holding: $${ctx.capitalRecoverable.toFixed(0)}
+- Do Nothing net: $${doNothing.toFixed(0)}
+- ${disc}% Discount strategy net: $${discount.toFixed(0)}
+- Amazon Outlet net: $${outlet.toFixed(0)}
+- Removal Order net: $${removal.toFixed(0)}
+- Projected 12-month storage fees: $${fees.toFixed(0)}
+- Optimal liquidation start: ${date}
+- Capital recoverable via discounting vs. holding: $${capital.toFixed(0)}
 
 Respond in under 150 words. Be direct, specific, and use numbers. Focus on actionable advice. If the question is unrelated to FBA or inventory, politely redirect.`;
 }
 
 // POST /api/ai/chat
-// Streams an OpenAI chat completion given simulation context + user messages.
+// Requires authenticated premium user. Streams an OpenAI completion.
 export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "OPENAI_API_KEY is not configured." }, { status: 500 });
   }
 
+  const supabase = await createClient();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("is_premium, premium_expires_at")
+    .eq("id", user.id)
+    .single();
+
+  const isPremium =
+    profile?.is_premium &&
+    profile.premium_expires_at &&
+    new Date(profile.premium_expires_at) > new Date();
+
+  if (!isPremium) {
+    return NextResponse.json({ error: "Premium subscription required." }, { status: 403 });
+  }
+
   const { messages, model, context } = await req.json() as {
-    messages: OpenAI.Chat.ChatCompletionMessageParam[];
+    messages: { role: string; content: string }[];
     model: string;
     context: ChatContext;
   };
 
+  const safeModel = ALLOWED_MODELS.has(model)
+    ? model
+    : (process.env.OPENAI_MODEL ?? "gpt-4o-mini");
+
+  const safeMessages = (Array.isArray(messages) ? messages : [])
+    .filter((m) => m.role === "user" && typeof m.content === "string")
+    .slice(-MAX_MESSAGES)
+    .map((m) => ({
+      role: "user" as const,
+      content: m.content.slice(0, MAX_CONTENT_LENGTH),
+    }));
+
   const client = new OpenAI({ apiKey });
 
   const stream = await client.chat.completions.create({
-    model: model || process.env.OPENAI_MODEL || "gpt-4o-mini",
-    messages: [{ role: "system", content: buildSystemPrompt(context) }, ...messages],
+    model: safeModel,
+    messages: [{ role: "system", content: buildSystemPrompt(context) }, ...safeMessages],
     stream: true,
     temperature: 0.6,
     max_tokens: 350,

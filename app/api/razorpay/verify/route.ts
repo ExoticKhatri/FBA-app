@@ -37,7 +37,12 @@ export async function POST(req: NextRequest) {
     .update(message)
     .digest("hex");
 
-  if (expected !== razorpay_signature) {
+  const expectedBuf = Buffer.from(expected, "hex");
+  const actualBuf = Buffer.from(razorpay_signature, "hex");
+  if (
+    expectedBuf.length !== actualBuf.length ||
+    !crypto.timingSafeEqual(expectedBuf, actualBuf)
+  ) {
     return NextResponse.json({ error: "Payment verification failed." }, { status: 403 });
   }
 
