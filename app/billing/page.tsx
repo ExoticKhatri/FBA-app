@@ -6,11 +6,14 @@ import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/client";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
+import ProfileAvatar from "@/components/ui/ProfileAvatar";
 
 interface Profile {
   is_premium: boolean;
   premium_expires_at: string | null;
   razorpay_subscription_id: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
 }
 
 export default function BillingPage() {
@@ -26,7 +29,7 @@ export default function BillingPage() {
       setUser(u);
       const { data } = await supabase
         .from("profiles")
-        .select("is_premium, premium_expires_at, razorpay_subscription_id")
+        .select("is_premium, premium_expires_at, razorpay_subscription_id, full_name, avatar_url")
         .eq("id", u.id)
         .single();
       setProfile(data as Profile | null);
@@ -71,15 +74,41 @@ export default function BillingPage() {
 
           {/* Account info */}
           {user && (
-            <Card elevated className="p-7">
-              <h1 className="text-xl font-bold text-slate-800 mb-1">Your Account</h1>
-              <div className="flex flex-col gap-2 mt-4">
+            <Card elevated className="overflow-hidden">
+              <div className="bg-linear-to-br from-indigo-50 via-purple-50 to-pink-50 px-7 pt-7 pb-6 flex flex-col items-center gap-3 border-b border-slate-100">
+                <div className="relative">
+                  <ProfileAvatar
+                    avatarUrl={profile?.avatar_url}
+                    name={profile?.full_name}
+                    email={user.email}
+                    size="lg"
+                  />
+                  {isPremiumActive && (
+                    <span className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center ring-2 ring-white text-[9px] text-white">
+                      ✓
+                    </span>
+                  )}
+                </div>
+                <div className="text-center">
+                  <h1 className="text-lg font-bold text-slate-800 leading-tight">
+                    {profile?.full_name ?? user.email?.split("@")[0]}
+                  </h1>
+                  <p className="text-sm text-slate-400 mt-0.5">{user.email}</p>
+                </div>
+                <span className={[
+                  "px-3 py-1 rounded-full text-xs font-semibold",
+                  isPremiumActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500",
+                ].join(" ")}>
+                  {isPremiumActive ? "✓ Premium" : "Free Tier"}
+                </span>
+              </div>
+              <div className="px-7 py-5 flex flex-col gap-1">
                 <div className="flex justify-between items-center py-2 border-b border-slate-100">
                   <span className="text-xs text-slate-500">Email</span>
                   <span className="text-sm text-slate-800 font-medium">{user.email}</span>
                 </div>
                 <div className="flex justify-between items-center py-2">
-                  <span className="text-xs text-slate-500">Account created</span>
+                  <span className="text-xs text-slate-500">Member since</span>
                   <span className="text-sm text-slate-600">{new Date(user.created_at).toLocaleDateString()}</span>
                 </div>
               </div>

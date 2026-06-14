@@ -35,6 +35,7 @@ import MultiSkuTable from "@/components/dashboard/MultiSkuTable";
 import AIChat from "@/components/dashboard/AIChat";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import ProfileDropdown from "@/components/ui/ProfileDropdown";
 
 declare global {
   interface Window {
@@ -81,6 +82,8 @@ function DashboardContent() {
   const [user, setUser] = useState<User | null>(null);
   const [isPremium, setIsPremium] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  const [fullName, setFullName] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [feeRates, setFeeRates] = useState<FeeRates>(DEFAULT_FEE_RATES);
   const [params, setParams] = useState<SimulationParams>(() => defaultParams(DEFAULT_FEE_RATES));
   const [showFeeConfig, setShowFeeConfig] = useState(false);
@@ -102,13 +105,15 @@ function DashboardContent() {
     async function loadPremium(userId: string) {
       const { data } = await supabase
         .from("profiles")
-        .select("is_premium, premium_expires_at")
+        .select("is_premium, premium_expires_at, full_name, avatar_url")
         .eq("id", userId)
         .single();
       if (data?.is_premium && data.premium_expires_at) {
         const expires = new Date(data.premium_expires_at);
         if (expires > new Date()) setIsPremium(true);
       }
+      if (data?.full_name) setFullName(data.full_name);
+      if (data?.avatar_url) setAvatarUrl(data.avatar_url);
     }
 
     supabase.auth.getUser().then(({ data: { user: u } }) => {
@@ -260,10 +265,13 @@ function DashboardContent() {
             </Button>
           )}
           {user ? (
-            <div className="flex items-center gap-2">
-              <Link href="/billing" className="text-xs text-slate-400 hover:text-slate-600 max-w-30 truncate">{user.email}</Link>
-              <button type="button" onClick={handleSignOut} className="text-xs text-slate-400 hover:text-slate-600">Sign out</button>
-            </div>
+            <ProfileDropdown
+              user={user}
+              fullName={fullName}
+              avatarUrl={avatarUrl}
+              isPremium={isPremium}
+              onSignOut={handleSignOut}
+            />
           ) : (
             <Link href="/auth/login?next=/dashboard" className="text-xs text-slate-400 hover:text-slate-600">Sign in</Link>
           )}
