@@ -17,6 +17,7 @@
     "openai": "^6.42.0",
     "papaparse": "^5.5.3",
     "plotly.js-dist-min": "^3.6.0",
+    "razorpay": "^2.9.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-plotly.js": "^3.0.0"
