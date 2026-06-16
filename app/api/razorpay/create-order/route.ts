@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import Razorpay from "razorpay";
 import { createClient } from "@/utils/supabase/server";
 
 // POST /api/razorpay/create-order
-// Creates a Razorpay order for the Standard Web Checkout flow.
-// Amount: ₹1,817 (≈ $19 USD) in paise.
-// Requires an authenticated session to prevent anonymous order creation.
+// Creates a Razorpay order for Standard Web Checkout.
+// Uses direct fetch instead of the SDK to avoid serverless bundle issues.
 export async function POST() {
   const supabase = await createClient();
   const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -21,22 +19,33 @@ export async function POST() {
     return NextResponse.json({ error: "Razorpay is not configured." }, { status: 500 });
   }
 
-  const client = new Razorpay({ key_id: keyId, key_secret: keySecret });
+  const basicAuth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
 
   try {
-    const order = await client.orders.create({
-      amount: amountPaise,
-      currency: "INR",
-      receipt: `premium_${user.id.slice(0, 8)}_${Date.now()}`,
+    const res = await fetch("https://api.razorpay.com/v1/orders", {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${basicAuth}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        amount: amountPaise,
+        currency: "INR",
+        receipt: `premium_${user.id.slice(0, 8)}_${Date.now()}`,
+      }),
     });
 
-    return NextResponse.json({
-      orderId: order.id,
-      amount: order.amount,
-      currency: order.currency,
-      keyId,
-    });
-  } catch {
-    return NextResponse.json({ error: "Failed to create payment order." }, { status: 502 });
+    if (!res.ok) {
+      const err = await res.json() as { error?: { description?: string; code?: string } };
+      const msg = err?.error?.description ?? `Razorpay API error ${res.status}`;
+      console.error("[create-order] Razorpay rejected:", res.status, err);
+      return NextResponse.json({ error: msg }, { status: 502 });
+    }
+
+    const data = await res.json() as { id: string; amount: number; currency: string };
+    return NextResponse.json({ orderId: data.id, amount: data.amount, currency: data.currency, keyId });
+  } catch (e) {
+    console.error("[create-order] fetch failed:", e);
+    return NextResponse.json({ error: "Failed to reach Razorpay API." }, { status: 502 });
   }
 }
