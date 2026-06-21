@@ -1,10 +1,19 @@
 "use client";
+import { useState, useEffect } from "react";
 import type { SimulationParams } from "@/lib/feeEngine";
 
 interface Props {
   params: SimulationParams;
   onChange: (updated: SimulationParams) => void;
   currencySymbol: string;
+}
+
+type DimUnit = "in" | "cm";
+
+function toCubicFeet(l: number, w: number, h: number, unit: DimUnit): number {
+  if (l <= 0 || w <= 0 || h <= 0) return 0;
+  const vol = l * w * h;
+  return unit === "in" ? vol / 1728 : vol / 28316.85;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -22,9 +31,38 @@ const inputCls =
   "w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-400 transition";
 
 export default function ManualInputForm({ params, onChange, currencySymbol }: Props) {
+  const [dimUnit, setDimUnit] = useState<DimUnit>("in");
+  const [length, setLength] = useState(0);
+  const [width, setWidth] = useState(0);
+  const [height, setHeight] = useState(0);
+
+  // When dimensions change, recompute cubicFeetPerUnit in params
+  useEffect(() => {
+    const cuft = toCubicFeet(length, width, height, dimUnit);
+    if (cuft > 0) {
+      onChange({ ...params, cubicFeetPerUnit: parseFloat(cuft.toFixed(4)) });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [length, width, height, dimUnit]);
+
+  // Also recompute when unit changes if dimensions are already filled
+  function switchUnit(next: DimUnit) {
+    if (next === dimUnit) return;
+    if (length > 0 || width > 0 || height > 0) {
+      const factor = next === "in" ? 1 / 2.54 : 2.54;
+      setLength(parseFloat((length * factor).toFixed(2)));
+      setWidth(parseFloat((width * factor).toFixed(2)));
+      setHeight(parseFloat((height * factor).toFixed(2)));
+    }
+    setDimUnit(next);
+  }
+
   function set<K extends keyof SimulationParams>(key: K, val: SimulationParams[K]) {
     onChange({ ...params, [key]: val });
   }
+
+  const computedCuFt = toCubicFeet(length, width, height, dimUnit);
+  const hasDims = computedCuFt > 0;
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -35,14 +73,6 @@ export default function ManualInputForm({ params, onChange, currencySymbol }: Pr
             type="number" min={1} className={inputCls}
             value={params.quantity}
             onChange={(e) => set("quantity", Math.max(1, Number(e.target.value)))}
-          />
-        </Field>
-
-        <Field label="Cu Ft / Unit">
-          <input
-            type="number" min={0.01} step={0.01} className={inputCls}
-            value={params.cubicFeetPerUnit}
-            onChange={(e) => set("cubicFeetPerUnit", Math.max(0.01, Number(e.target.value)))}
           />
         </Field>
 
@@ -77,6 +107,75 @@ export default function ManualInputForm({ params, onChange, currencySymbol }: Pr
             onChange={(e) => set("landedCost", Math.max(0, Number(e.target.value)))}
           />
         </Field>
+      </div>
+
+      {/* ── Dimensions ── */}
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">
+            Product Dimensions
+          </span>
+          {/* Unit toggle */}
+          <div className="flex p-0.5 bg-slate-100 rounded-lg gap-0.5">
+            {(["in", "cm"] as DimUnit[]).map((u) => (
+              <button
+                key={u}
+                type="button"
+                onClick={() => switchUnit(u)}
+                className={[
+                  "px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all",
+                  dimUnit === u
+                    ? "bg-white text-slate-800 shadow-sm"
+                    : "text-slate-400 hover:text-slate-600",
+                ].join(" ")}
+              >
+                {u === "in" ? "inches" : "cm"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-1.5">
+          {[
+            { label: `L (${dimUnit})`, val: length, set: setLength },
+            { label: `W (${dimUnit})`, val: width, set: setWidth },
+            { label: `H (${dimUnit})`, val: height, set: setHeight },
+          ].map(({ label, val, set: setFn }) => (
+            <label key={label} className="flex flex-col gap-0.5 cursor-default">
+              <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">
+                {label}
+              </span>
+              <input
+                type="number"
+                min={0}
+                step={0.1}
+                className={inputCls}
+                value={val || ""}
+                placeholder="0"
+                onChange={(e) => setFn(Math.max(0, Number(e.target.value)))}
+              />
+            </label>
+          ))}
+        </div>
+
+        {/* Computed result or fallback display */}
+        <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[10px] ${hasDims ? "bg-indigo-50 text-indigo-600" : "bg-slate-50 text-slate-400"}`}>
+          <span>📦</span>
+          {hasDims ? (
+            <span>
+              <span className="font-bold">{computedCuFt.toFixed(4)}</span>
+              <span className="ml-1">cu ft / unit</span>
+              <span className="ml-2 text-indigo-400">
+                ({(computedCuFt * params.quantity).toFixed(3)} cu ft total)
+              </span>
+            </span>
+          ) : (
+            <span>
+              Enter dimensions above — or using stored value:{" "}
+              <span className="font-semibold text-slate-500">{params.cubicFeetPerUnit} cu ft/unit</span>
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Sliders */}
