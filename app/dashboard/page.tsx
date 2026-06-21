@@ -338,6 +338,34 @@ function DashboardContent() {
               />
             )}
           </div>
+
+          {/* Beta offer — pinned at sidebar bottom */}
+          <div className="shrink-0 border-t border-slate-100 p-3">
+            <div className="rounded-xl bg-linear-to-br from-indigo-50 to-violet-50 border border-indigo-100 p-2.5 flex flex-col gap-1.5">
+              <p className="text-[10px] font-bold text-indigo-700 uppercase tracking-wide leading-tight">
+                🎁 Get 1 Month Premium Free
+              </p>
+              <p className="text-[10px] text-indigo-500 leading-snug">
+                Share your Amazon sales data with us and get premium free for a month.
+              </p>
+              <div className="flex flex-col gap-1 pt-0.5">
+                <a
+                  href="mailto:prakashgour453@gmail.com"
+                  className="flex items-center gap-1.5 text-[10px] text-indigo-600 font-semibold hover:text-indigo-800 transition-colors"
+                >
+                  ✉ prakashgour453@gmail.com
+                </a>
+                <a
+                  href="https://wa.me/917388910781"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-[10px] text-emerald-600 font-semibold hover:text-emerald-800 transition-colors"
+                >
+                  💬 WhatsApp +91&nbsp;73889&nbsp;10781
+                </a>
+              </div>
+            </div>
+          </div>
         </aside>
 
         {/* ── VISUALISER (75%) ── */}
