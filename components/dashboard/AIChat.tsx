@@ -87,7 +87,7 @@ export default function AIChat({ context, isPremium, onUpgradeClick }: Props) {
       <button
         type="button"
         onClick={isPremium ? () => setOpen(true) : onUpgradeClick}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all"
+        className="fixed bottom-20 right-4 sm:bottom-8 sm:right-6 z-40 flex items-center gap-2 px-4 py-3 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all"
       >
         <span className="text-lg">🤖</span>
         <span className="text-sm font-semibold">AI Analyst</span>

@@ -14,6 +14,7 @@ export interface ChatSkuRow {
 
 export interface ChatContext {
   skuLabel: string;
+  todayDate: string;            // e.g. "Saturday, June 21, 2026"
   quantity: number;
   isOversize: boolean;
   ageInDays: number;
@@ -75,8 +76,11 @@ function buildSystemPrompt(ctx: ChatContext): string {
     skuTable = `\n\nCSV Upload — ${ctx.skuSummaries.length} SKUs analyzed:\n${lines.join("\n")}${more}`;
   }
 
+  const today = String(ctx.todayDate ?? new Date().toDateString()).slice(0, 50).replace(/[\r\n]/g, "");
+
   return `You are an expert Amazon FBA inventory analyst. A seller is using the FBA Liquidation Simulator and needs your advice.
 
+Today's date: ${today}
 Active simulation — ${label}:
 - Quantity: ${qty} units (${oversize ? "Oversize" : "Standard-size"})
 - Age in FBA: ${age} days

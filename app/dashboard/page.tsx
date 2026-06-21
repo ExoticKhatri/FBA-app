@@ -91,6 +91,7 @@ function DashboardContent() {
   const [authLoading, setAuthLoading] = useState(true);
   const [fullName, setFullName] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { region } = useRegion();
   const {
     rates: feeRates,
@@ -176,6 +177,7 @@ function DashboardContent() {
 
   const chatContext = useMemo<ChatContext>(() => ({
     skuLabel,
+    todayDate: new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" }),
     quantity: params.quantity,
     isOversize: params.isOversize,
     ageInDays: params.ageInDays,
@@ -219,6 +221,7 @@ function DashboardContent() {
     }));
     const summaries = computeSkuSummaries(agg, feeRates, NOW.getMonth() + 1, NOW.getFullYear());
     setSkuSummaries(summaries);
+    setMobileSidebarOpen(false);
   }, [csv, mapping, feeRates]);
 
   const handleSelectSku = useCallback((sku: SkuSummary) => {
@@ -295,13 +298,29 @@ function DashboardContent() {
         authLoading={authLoading}
         onUpgrade={handleUpgrade}
         onSignOut={handleSignOut}
+        onToggleSidebar={() => setMobileSidebarOpen((v) => !v)}
+        sidebarOpen={mobileSidebarOpen}
       />
 
       {/* ── BODY: sidebar + visualiser ── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
 
-        {/* ── SIDE PANEL (25%) ── */}
-        <aside className="w-[25%] shrink-0 flex flex-col bg-white border-r border-slate-100 overflow-hidden">
+        {/* Mobile overlay backdrop */}
+        {mobileSidebarOpen && (
+          <div
+            className="fixed inset-0 z-20 bg-black/40 md:hidden"
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        )}
+
+        {/* ── SIDE PANEL ── */}
+        {/* Desktop: 25% fixed; Mobile: full-width overlay from left */}
+        <aside className={[
+          "flex flex-col bg-white border-r border-slate-100 overflow-hidden z-30",
+          "md:relative md:w-[25%] md:shrink-0 md:translate-x-0",
+          "fixed inset-y-0 left-0 w-[85vw] max-w-xs transition-transform duration-300",
+          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+        ].join(" ")}>
 
           {/* Parameters — pinned, never scrolls */}
           <div className="shrink-0 p-3 flex flex-col gap-2.5 border-b border-slate-100">
@@ -339,37 +358,45 @@ function DashboardContent() {
             )}
           </div>
 
-          {/* Beta offer — pinned at sidebar bottom */}
-          <div className="shrink-0 border-t border-slate-100 p-3">
-            <div className="rounded-xl bg-linear-to-br from-indigo-50 to-violet-50 border border-indigo-100 p-2.5 flex flex-col gap-1.5">
-              <p className="text-[10px] font-bold text-indigo-700 uppercase tracking-wide leading-tight">
-                🎁 Get 1 Month Premium Free
-              </p>
-              <p className="text-[10px] text-indigo-500 leading-snug">
-                Share your Amazon sales data with us and get premium free for a month.
-              </p>
-              <div className="flex flex-col gap-1 pt-0.5">
-                <a
-                  href="mailto:prakashgour453@gmail.com"
-                  className="flex items-center gap-1.5 text-[10px] text-indigo-600 font-semibold hover:text-indigo-800 transition-colors"
-                >
-                  ✉ prakashgour453@gmail.com
-                </a>
-                <a
-                  href="https://wa.me/917388910781"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 text-[10px] text-emerald-600 font-semibold hover:text-emerald-800 transition-colors"
-                >
-                  💬 WhatsApp +91&nbsp;73889&nbsp;10781
-                </a>
+          {/* Beta offer — pinned at sidebar bottom, hidden for premium users */}
+          {!isPremium && (
+            <div className="shrink-0 border-t border-slate-100 p-3">
+              <div className="rounded-xl bg-linear-to-br from-indigo-50 to-violet-50 border border-indigo-100 p-2.5 flex flex-col gap-1.5">
+                <p className="text-[10px] font-bold text-indigo-700 uppercase tracking-wide leading-tight">
+                  🎁 Get 1 Month Premium Free
+                </p>
+                <p className="text-[10px] text-indigo-500 leading-snug">
+                  We&apos;re in early beta — reach out and we&apos;ll give you a free premium month.
+                </p>
+                <div className="flex flex-col gap-1 pt-0.5">
+                  <a
+                    href="mailto:prakashgour453@gmail.com"
+                    className="flex items-center gap-1.5 text-[10px] text-indigo-600 font-semibold hover:text-indigo-800 transition-colors"
+                  >
+                    ✉ prakashgour453@gmail.com
+                  </a>
+                  <a
+                    href="https://wa.me/917388910781"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-[10px] text-emerald-600 font-semibold hover:text-emerald-800 transition-colors"
+                  >
+                    💬 WhatsApp +91&nbsp;73889&nbsp;10781
+                  </a>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </aside>
 
-        {/* ── VISUALISER (75%) ── */}
-        <main className="flex-1 overflow-y-auto p-6 pb-28 flex flex-col gap-5">
+        {/* ── VISUALISER ── */}
+        <main className="flex-1 overflow-y-auto px-3 pt-3 pb-36 sm:px-6 sm:pt-6 sm:pb-36 flex flex-col gap-4 sm:gap-5 min-w-0">
+          {/* Mobile params hint */}
+          <div className="md:hidden flex items-center gap-2 text-xs text-slate-400 bg-slate-50 rounded-xl px-3 py-2">
+            <span>☰</span>
+            <span>Tap the menu button to adjust parameters &amp; upload CSV</span>
+          </div>
+
           {/* 1. Metric badges */}
           <MetricRibbon metrics={metrics} currency={region.currency} />
 
@@ -379,6 +406,7 @@ function DashboardContent() {
             isLoggedIn={isLoggedIn}
             isPremium={isPremium}
             currency={region.currency}
+            monthlyFeeBurn={metrics.projected12MFees / 12}
             onLoginClick={handleLogin}
             onUpgradeClick={handleUpgrade}
           />
@@ -399,6 +427,7 @@ function DashboardContent() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <BreakEvenPanel
               result={breakEven}
+              params={params}
               currentDiscountPct={params.aggressiveDiscountPct}
               isPremium={isPremium}
               onUpgradeClick={handleUpgrade}
