@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@/utils/supabase/server";
 
+export interface ChatSkuRow {
+  sku: string;
+  quantity: number;
+  ageInDays: number;
+  monthlyFee: number;
+  projected12MFees: number;
+  urgencyScore: number;
+  recommendedAction: string;
+}
+
 export interface ChatContext {
   skuLabel: string;
   quantity: number;
@@ -19,6 +29,8 @@ export interface ChatContext {
   discountNet12M: number;
   outletNet12M: number;
   removalNet12M: number;
+  // All SKUs from uploaded CSV (may be empty for manual-only sessions)
+  skuSummaries?: ChatSkuRow[];
 }
 
 const ALLOWED_MODELS = new Set(["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]);
@@ -48,24 +60,38 @@ function buildSystemPrompt(ctx: ChatContext): string {
   const date = String(ctx.optimalLiquidationDate ?? "N/A").slice(0, 30).replace(/[\r\n]/g, "");
   const capital = safeNum(ctx.capitalRecoverable);
 
+  // Build CSV SKU table when the seller uploaded multi-SKU data
+  let skuTable = "";
+  if (Array.isArray(ctx.skuSummaries) && ctx.skuSummaries.length > 0) {
+    const rows = ctx.skuSummaries.slice(0, 25);
+    const lines = rows.map((s) => {
+      const sku = String(s.sku ?? "").slice(0, 30).replace(/[\r\n|]/g, " ");
+      const action = String(s.recommendedAction ?? "").replace(/[\r\n]/g, " ");
+      return `• ${sku}: ${safeNum(s.quantity)} units, ${safeNum(s.ageInDays)}d old, $${safeNum(s.monthlyFee).toFixed(0)}/mo fees, urgency ${safeNum(s.urgencyScore)}/10 → ${action}`;
+    });
+    const more = ctx.skuSummaries.length > 25
+      ? `\n  …and ${ctx.skuSummaries.length - 25} more SKUs`
+      : "";
+    skuTable = `\n\nCSV Upload — ${ctx.skuSummaries.length} SKUs analyzed:\n${lines.join("\n")}${more}`;
+  }
+
   return `You are an expert Amazon FBA inventory analyst. A seller is using the FBA Liquidation Simulator and needs your advice.
 
-Current simulation data:
-- Product / SKU: ${label}
+Active simulation — ${label}:
 - Quantity: ${qty} units (${oversize ? "Oversize" : "Standard-size"})
 - Age in FBA: ${age} days
 - Monthly sales velocity: ${velocity} units/month
 - Selling price: $${price.toFixed(2)}/unit | Landed cost: $${cost.toFixed(2)}/unit
 - FBA storage volume: ${volume.toFixed(2)} cubic feet
 
-12-month projection results:
+12-month projections:
 - Do Nothing net: $${doNothing.toFixed(0)}
 - ${disc}% Discount strategy net: $${discount.toFixed(0)}
 - Amazon Outlet net: $${outlet.toFixed(0)}
 - Removal Order net: $${removal.toFixed(0)}
 - Projected 12-month storage fees: $${fees.toFixed(0)}
 - Optimal liquidation start: ${date}
-- Capital recoverable via discounting vs. holding: $${capital.toFixed(0)}
+- Capital recoverable vs. holding: $${capital.toFixed(0)}${skuTable}
 
 Respond in under 150 words. Be direct, specific, and use numbers. Focus on actionable advice. If the question is unrelated to FBA or inventory, politely redirect.`;
 }

@@ -8,6 +8,7 @@ import Button from "@/components/ui/Button";
 interface Props {
   skus: SkuSummary[];
   isPremium: boolean;
+  currency: string;
   onSelectSku: (sku: SkuSummary) => void;
   model: string;
 }
@@ -21,11 +22,11 @@ const ACTION_COLORS: Record<SkuSummary["recommendedAction"], string> = {
   Hold: "bg-slate-100 text-slate-600",
 };
 
-function fmt(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+function fmt(n: number, currency: string) {
+  return n.toLocaleString(undefined, { style: "currency", currency, maximumFractionDigits: 0 });
 }
 
-export default function MultiSkuTable({ skus, isPremium, onSelectSku, model }: Props) {
+export default function MultiSkuTable({ skus, isPremium, currency, onSelectSku, model }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("urgencyScore");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [aiInsights, setAiInsights] = useState<AiSkuInsight[]>([]);
@@ -130,8 +131,8 @@ export default function MultiSkuTable({ skus, isPremium, onSelectSku, model }: P
                       {sku.ageInDays}
                     </span>
                   </td>
-                  <td className="px-3 py-2.5 text-rose-500 font-medium">{fmt(sku.monthlyFee)}</td>
-                  <td className="px-3 py-2.5 text-rose-600 font-semibold">{fmt(sku.projected12MFees)}</td>
+                  <td className="px-3 py-2.5 text-rose-500 font-medium">{fmt(sku.monthlyFee, currency)}</td>
+                  <td className="px-3 py-2.5 text-rose-600 font-semibold">{fmt(sku.projected12MFees, currency)}</td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-1.5">
                       <div className="w-14 h-1.5 bg-slate-100 rounded-full overflow-hidden">

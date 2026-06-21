@@ -13,24 +13,44 @@ export default function FileUploadZone({ isPremium, onParsed, onUpgradeClick }: 
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filename, setFilename] = useState<string | null>(null);
+  const [filenames, setFilenames] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  async function handleFile(file: File) {
-    if (!file.name.endsWith(".csv")) {
-      setError("Please upload a .csv file.");
+  async function handleFiles(files: FileList | File[]) {
+    const csvFiles = Array.from(files).filter((f) => f.name.endsWith(".csv"));
+    if (!csvFiles.length) {
+      setError("Please upload .csv file(s).");
       return;
     }
+
     setLoading(true);
     setError(null);
+
     try {
-      const result = await parseCSVFile(file);
-      setFilename(file.name);
-      onParsed(result);
+      const results = await Promise.all(csvFiles.map((f) => parseCSVFile(f)));
+      // Merge: use first file's headers, combine all rows
+      const headers = results[0].headers;
+      const allRows = results.flatMap((r) => r.rows);
+      const merged: ParsedCSV = {
+        headers,
+        rows: allRows,
+        preview: allRows.slice(0, 5),
+      };
+      setFilenames(csvFiles.map((f) => f.name));
+      onParsed(merged);
     } catch {
-      setError("Failed to parse CSV. Check the file format.");
+      setError("Failed to parse CSV. Check file format.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  function removeFile(name: string) {
+    const next = filenames.filter((f) => f !== name);
+    setFilenames(next);
+    if (next.length === 0) {
+      // Reset input so re-upload triggers onChange
+      if (inputRef.current) inputRef.current.value = "";
     }
   }
 
@@ -38,16 +58,18 @@ export default function FileUploadZone({ isPremium, onParsed, onUpgradeClick }: 
     return (
       <button
         onClick={onUpgradeClick}
-        className="w-full rounded-2xl border-2 border-dashed border-slate-200 p-6 flex flex-col items-center gap-2 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all group"
+        className="w-full rounded-xl border-2 border-dashed border-slate-200 px-3 py-3 flex items-center gap-3 hover:border-indigo-300 hover:bg-indigo-50/50 transition-all group"
       >
-        <div className="text-3xl">🔒</div>
-        <p className="text-sm font-semibold text-slate-600 group-hover:text-indigo-600 transition-colors">
-          CSV Upload — Premium
-        </p>
-        <p className="text-xs text-slate-400 text-center">
-          Unlock to import any Amazon inventory report
-        </p>
-        <span className="mt-1 px-3 py-1 rounded-full bg-indigo-600 text-white text-xs font-medium">
+        <span className="text-xl shrink-0">🔒</span>
+        <div className="text-left min-w-0">
+          <p className="text-xs font-semibold text-slate-600 group-hover:text-indigo-600 transition-colors">
+            CSV Upload — Premium
+          </p>
+          <p className="text-[10px] text-slate-400 truncate">
+            Unlock to import Amazon inventory reports
+          </p>
+        </div>
+        <span className="ml-auto shrink-0 px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-medium">
           Upgrade
         </span>
       </button>
@@ -55,7 +77,8 @@ export default function FileUploadZone({ isPremium, onParsed, onUpgradeClick }: 
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-2">
+      {/* Drop zone */}
       <div
         role="button"
         tabIndex={0}
@@ -66,30 +89,55 @@ export default function FileUploadZone({ isPremium, onParsed, onUpgradeClick }: 
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          const f = e.dataTransfer.files[0];
-          if (f) handleFile(f);
+          handleFiles(e.dataTransfer.files);
         }}
         className={[
-          "w-full rounded-2xl border-2 border-dashed p-6 flex flex-col items-center gap-2 cursor-pointer transition-all",
+          "w-full rounded-xl border-2 border-dashed px-3 py-3 flex items-center gap-3 cursor-pointer transition-all",
           dragging
-            ? "border-indigo-400 bg-indigo-50 scale-[1.02]"
+            ? "border-indigo-400 bg-indigo-50 scale-[1.01]"
             : "border-slate-200 hover:border-indigo-300 hover:bg-slate-50",
         ].join(" ")}
       >
-        <div className="text-3xl">{loading ? "⏳" : "📂"}</div>
-        <p className="text-sm font-medium text-slate-600">
-          {loading ? "Parsing…" : filename ?? "Drop Amazon CSV here"}
-        </p>
-        <p className="text-xs text-slate-400">or click to browse</p>
+        <span className="text-xl shrink-0">{loading ? "⏳" : "📂"}</span>
+        <div className="min-w-0">
+          <p className="text-xs font-medium text-slate-600">
+            {loading ? "Parsing…" : "Drop CSVs here"}
+          </p>
+          <p className="text-[10px] text-slate-400">click to browse · multiple files OK</p>
+        </div>
         <input
           ref={inputRef}
           type="file"
           accept=".csv"
+          multiple
           className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+          onChange={(e) => { if (e.target.files?.length) handleFiles(e.target.files); }}
         />
       </div>
-      {error && <p className="text-xs text-rose-500 mt-2">{error}</p>}
+
+      {/* File chips */}
+      {filenames.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {filenames.map((name) => (
+            <span
+              key={name}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-[10px] text-indigo-700 font-medium max-w-full"
+            >
+              <span className="truncate max-w-30">{name}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${name}`}
+                onClick={() => removeFile(name)}
+                className="text-indigo-400 hover:text-indigo-700 shrink-0 leading-none"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {error && <p className="text-[10px] text-rose-500">{error}</p>}
     </div>
   );
 }

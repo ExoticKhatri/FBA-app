@@ -7,6 +7,7 @@ import { createClient } from "@/utils/supabase/client";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import ProfileAvatar from "@/components/ui/ProfileAvatar";
+import { useRegion } from "@/hooks/useRegion";
 
 interface Profile {
   is_premium: boolean;
@@ -36,6 +37,8 @@ export default function BillingPage() {
       setLoading(false);
     });
   }, []);
+
+  const { region } = useRegion();
 
   const premiumExpires = profile?.premium_expires_at ? new Date(profile.premium_expires_at) : null;
   const daysRemaining = premiumExpires
@@ -177,7 +180,7 @@ export default function BillingPage() {
                   Upgrade to Premium to unlock CSV ingestion, multi-scenario charts, and PDF exports.
                 </p>
                 <Link href="/dashboard?upgrade=1">
-                  <Button className="w-full">Unlock Premium — $19/month</Button>
+                  <Button className="w-full">Unlock Premium — {region.displayPrice}/month</Button>
                 </Link>
               </div>
             )}

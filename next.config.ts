@@ -1,5 +1,12 @@
 import type { NextConfig } from "next";
 
+const isDev = process.env.NODE_ENV !== "production";
+
+// React dev mode uses eval() for source maps and HMR — only allow it in development.
+const scriptSrc = isDev
+  ? "'self' 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com"
+  : "'self' 'unsafe-inline' https://checkout.razorpay.com";
+
 const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -10,7 +17,7 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com",
+      `script-src ${scriptSrc}`,
       "connect-src 'self' https://*.supabase.co https://api.openai.com https://api.razorpay.com",
       "frame-src https://api.razorpay.com",
       "img-src 'self' data: https:",

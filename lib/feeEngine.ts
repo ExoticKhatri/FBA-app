@@ -1,28 +1,106 @@
+// ─── Fee Rates & Defaults ─────────────────────────────────────────────────────
+
 export interface FeeRates {
-  standardNonPeak: number;   // $/cu ft/month Jan–Sep
-  standardPeak: number;      // $/cu ft/month Oct–Dec
-  oversizeNonPeak: number;
-  oversizePeak: number;
-  aged181to270: number;      // $/cu ft surcharge, assessed monthly
-  aged271to365: number;
-  aged365Plus: number;
-  removalStandard: number;   // $/unit
-  removalOversize: number;
-  outletRecoveryRate: number; // 0–1 fraction of selling price recovered
+  // 1. Monthly Subscription Fee
+  monthlySubscriptionFee: number;    // $/month flat (US: $39.99)
+  enableMonthlySubscription: boolean;
+
+  // 2. Inbound Shipping Fee
+  inboundShippingPerLb: number;      // $/lb (US midpoint ~$0.47)
+  unitWeightLbs: number;             // avg weight per unit (lbs)
+  enableInboundShipping: boolean;
+
+  // 3. Inbound Placement Fee (charged ~45 days after check-in)
+  inboundPlacementPerUnit: number;   // $/unit (US midpoint ~$0.34)
+  enableInboundPlacement: boolean;
+
+  // 4. Standard Storage Fee ($/cu ft/month)
+  standardNonPeak: number;           // Jan–Sep standard: $0.78
+  standardPeak: number;              // Oct–Dec standard: $2.40
+  oversizeNonPeak: number;           // Jan–Sep oversize: $0.56
+  oversizePeak: number;              // Oct–Dec oversize: $1.40
+  enableStorageFee: boolean;
+
+  // 5. Low-Inventory-Level Fee (per unit sold when stock < 28-day supply)
+  lowInventoryFeePerUnit: number;    // $/unit sold (US midpoint ~$0.71)
+  enableLowInventoryFee: boolean;
+
+  // 6. Referral Fee / Commission
+  referralFeePct: number;            // fraction, e.g. 0.15 = 15%
+  enableReferralFee: boolean;
+
+  // 7. Base FBA Fulfillment Fee ($/unit)
+  fulfillmentFeeStandard: number;    // Standard: $3.50
+  fulfillmentFeeOversize: number;    // Oversize: $7.00
+  enableFulfillmentFee: boolean;
+
+  // 8. Fuel & Logistics Surcharge (% of fulfillment fee)
+  fuelSurchargePct: number;          // 3.5%
+  enableFuelSurcharge: boolean;
+
+  // 9. Aged Inventory Surcharge ($/cu ft/month, assessed on 15th of month)
+  aged181to270: number;              // $0.50
+  aged271to365: number;              // $1.00
+  aged365Plus: number;               // $1.50 (can reach $6.90 peak)
+  enableAgedSurcharge: boolean;
+
+  // 10. Removal / Disposal Fee ($/unit)
+  removalStandard: number;           // $0.97
+  removalOversize: number;           // $2.89
+  outletRecoveryRate: number;        // Amazon Outlet: fraction of price recovered (0–1)
 }
 
 export const DEFAULT_FEE_RATES: FeeRates = {
+  // 1. Monthly subscription
+  monthlySubscriptionFee: 39.99,
+  enableMonthlySubscription: false,
+
+  // 2. Inbound shipping
+  inboundShippingPerLb: 0.47,
+  unitWeightLbs: 1.0,
+  enableInboundShipping: false,
+
+  // 3. Inbound placement
+  inboundPlacementPerUnit: 0.34,
+  enableInboundPlacement: false,
+
+  // 4. Storage
   standardNonPeak: 0.78,
   standardPeak: 2.40,
   oversizeNonPeak: 0.56,
   oversizePeak: 1.40,
+  enableStorageFee: true,
+
+  // 5. Low inventory
+  lowInventoryFeePerUnit: 0.71,
+  enableLowInventoryFee: false,
+
+  // 6. Referral
+  referralFeePct: 0.15,
+  enableReferralFee: true,
+
+  // 7. Fulfillment
+  fulfillmentFeeStandard: 3.50,
+  fulfillmentFeeOversize: 7.00,
+  enableFulfillmentFee: true,
+
+  // 8. Fuel surcharge
+  fuelSurchargePct: 0.035,
+  enableFuelSurcharge: true,
+
+  // 9. Aged surcharge
   aged181to270: 0.50,
   aged271to365: 1.00,
   aged365Plus: 1.50,
+  enableAgedSurcharge: true,
+
+  // 10. Removal / outlet
   removalStandard: 0.97,
   removalOversize: 2.89,
   outletRecoveryRate: 0.25,
 };
+
+// ─── Simulation Params ────────────────────────────────────────────────────────
 
 export interface SimulationParams {
   quantity: number;
@@ -32,9 +110,9 @@ export interface SimulationParams {
   monthlySalesVelocity: number;
   currentPrice: number;
   landedCost: number;
-  aggressiveDiscountPct: number;   // e.g. 0.50 = 50% off
-  velocityMultiplier: number;      // e.g. 2.0 = 2× velocity when discounted
-  startMonth: number;              // 1–12
+  aggressiveDiscountPct: number;
+  velocityMultiplier: number;
+  startMonth: number;               // 1–12
   startYear: number;
   rates: FeeRates;
 }
@@ -45,7 +123,7 @@ export interface ScenarioPoint {
   aggressiveDiscount: number;
   amazonOutlet: number;
   removalOrder: number;
-  cumulativeFees: number; // Do Nothing fees for metric ribbon
+  cumulativeFees: number;
 }
 
 export interface SimulationMetrics {
@@ -55,13 +133,15 @@ export interface SimulationMetrics {
   totalVolumeCubicFeet: number;
 }
 
+// ─── Internal helpers ─────────────────────────────────────────────────────────
+
 function monthLabel(calMonth: number, calYear: number): string {
   const d = new Date(calYear, calMonth - 1, 1);
   return `${d.toLocaleString("default", { month: "short" })} '${String(calYear).slice(2)}`;
 }
 
 function isPeakMonth(m: number): boolean {
-  return m >= 10; // Oct, Nov, Dec
+  return m >= 10;
 }
 
 function agedSurcharge(ageInDays: number, rates: FeeRates): number {
@@ -76,29 +156,64 @@ function baseStorageRate(isOversize: boolean, isPeak: boolean, rates: FeeRates):
   return isPeak ? rates.standardPeak : rates.standardNonPeak;
 }
 
+// ─── Core simulation ──────────────────────────────────────────────────────────
+
 export function computeScenarios(params: SimulationParams): ScenarioPoint[] {
   const {
     quantity, cubicFeetPerUnit, isOversize, ageInDays,
     monthlySalesVelocity, currentPrice, landedCost,
     aggressiveDiscountPct, velocityMultiplier,
-    startMonth, startYear, rates,
+    startMonth, startYear, rates: r,
   } = params;
 
   const discountedPrice = currentPrice * (1 - aggressiveDiscountPct);
   const discountedVelocity = Math.round(monthlySalesVelocity * velocityMultiplier);
-  const removalFee = isOversize ? rates.removalOversize : rates.removalStandard;
+  const removalFeePerUnit = isOversize ? r.removalOversize : r.removalStandard;
 
-  // Instant-clearance scenarios (flat lines)
-  const outletNet = quantity * currentPrice * rates.outletRecoveryRate;
-  const removalNet = quantity * landedCost - quantity * removalFee;
+  // Per-unit fulfillment cost (fees 7 + 8)
+  const fulfillmentBase = r.enableFulfillmentFee
+    ? (isOversize ? r.fulfillmentFeeOversize : r.fulfillmentFeeStandard)
+    : 0;
+  const fuelCost = r.enableFuelSurcharge ? fulfillmentBase * r.fuelSurchargePct : 0;
+  const fulfillmentTotal = fulfillmentBase + fuelCost;
+
+  // Net revenue per unit after Amazon's per-sale deductions (fees 6, 7, 8)
+  const netPerUnitDN = currentPrice
+    - (r.enableReferralFee ? currentPrice * r.referralFeePct : 0)
+    - fulfillmentTotal;
+
+  const netPerUnitDisc = discountedPrice
+    - (r.enableReferralFee ? discountedPrice * r.referralFeePct : 0)
+    - fulfillmentTotal;
+
+  // Monthly flat overhead (fee 1)
+  const monthlyOverhead = r.enableMonthlySubscription ? r.monthlySubscriptionFee : 0;
+
+  // One-time inbound costs (fees 2 + 3)
+  const inboundShipping = r.enableInboundShipping
+    ? quantity * r.unitWeightLbs * r.inboundShippingPerLb
+    : 0;
+  const inboundPlacement = r.enableInboundPlacement
+    ? quantity * r.inboundPlacementPerUnit
+    : 0;
+
+  // Instant-clearance baselines
+  const outletPricePerUnit = currentPrice * r.outletRecoveryRate;
+  const outletNetPerUnit = outletPricePerUnit
+    - (r.enableReferralFee ? outletPricePerUnit * r.referralFeePct : 0)
+    - fulfillmentTotal;
+  const outletNet = quantity * Math.max(0, outletNetPerUnit) - inboundShipping - inboundPlacement;
+  const removalNet = quantity * landedCost - quantity * removalFeePerUnit - inboundShipping;
 
   let dnUnits = quantity;
-  let dnRevenue = 0;
+  let dnRevenue = -inboundShipping;  // inbound shipping as day-0 cost
   let dnFees = 0;
 
   let discUnits = quantity;
-  let discRevenue = 0;
+  let discRevenue = -inboundShipping;
   let discFees = 0;
+
+  let placementCharged = false;
 
   const points: ScenarioPoint[] = [];
 
@@ -107,21 +222,36 @@ export function computeScenarios(params: SimulationParams): ScenarioPoint[] {
     const calYear = startYear + Math.floor((startMonth - 1 + m) / 12);
     const peak = isPeakMonth(calMonth);
     const age = ageInDays + m * 30;
-    const baseRate = baseStorageRate(isOversize, peak, rates);
-    const surcharge = agedSurcharge(age, rates);
-    const effectiveRate = baseRate + surcharge;
+
+    // Storage rate for this month (fees 4 + 9)
+    const storageRate = r.enableStorageFee ? baseStorageRate(isOversize, peak, r) : 0;
+    const agedRate = r.enableAgedSurcharge ? agedSurcharge(age, r) : 0;
+    const effectiveRate = storageRate + agedRate;
+
+    // Inbound placement charged at ~45 days (month index 1, fee 3)
+    if (m === 1 && !placementCharged) {
+      dnRevenue -= inboundPlacement;
+      discRevenue -= inboundPlacement;
+      placementCharged = true;
+    }
 
     // Do Nothing
     const dnSold = Math.min(monthlySalesVelocity, dnUnits);
-    dnRevenue += dnSold * currentPrice;
+    const dnLowInv = (r.enableLowInventoryFee && dnUnits < monthlySalesVelocity)
+      ? dnSold * r.lowInventoryFeePerUnit
+      : 0;
+    dnRevenue += dnSold * netPerUnitDN;
     dnUnits -= dnSold;
-    dnFees += dnUnits * cubicFeetPerUnit * effectiveRate;
+    dnFees += dnUnits * cubicFeetPerUnit * effectiveRate + monthlyOverhead + dnLowInv;
 
     // Aggressive Discount
     const discSold = Math.min(discountedVelocity, discUnits);
-    discRevenue += discSold * discountedPrice;
+    const discLowInv = (r.enableLowInventoryFee && discUnits < monthlySalesVelocity)
+      ? discSold * r.lowInventoryFeePerUnit
+      : 0;
+    discRevenue += discSold * netPerUnitDisc;
     discUnits -= discSold;
-    discFees += discUnits * cubicFeetPerUnit * effectiveRate;
+    discFees += discUnits * cubicFeetPerUnit * effectiveRate + monthlyOverhead + discLowInv;
 
     points.push({
       monthLabel: monthLabel(calMonth, calYear),
@@ -139,8 +269,8 @@ export function computeScenarios(params: SimulationParams): ScenarioPoint[] {
 // ─── Break-even finder ────────────────────────────────────────────────────────
 
 export interface BreakEvenResult {
-  discountPct: number | null;  // null = no discount makes sense within 95% off
-  monthLabel: string | null;   // which month the break-even is first crossed
+  discountPct: number | null;
+  monthLabel: string | null;
 }
 
 export function findBreakEven(params: SimulationParams): BreakEvenResult {
@@ -171,15 +301,15 @@ export interface RemovalPlan {
   monthlyCost: number;
   totalRemovalCost: number;
   monthsUntilBreakEven: number;
-  saveByRemovingNow: number;   // 12M savings vs. keeping
-  removeByDate: string;        // end of current month
+  saveByRemovingNow: number;
+  removeByDate: string;
 }
 
 export function computeRemovalPlan(params: SimulationParams): RemovalPlan {
   const { quantity, cubicFeetPerUnit, isOversize, ageInDays, startMonth, startYear, rates } = params;
   const peak = isPeakMonth(startMonth);
-  const base = baseStorageRate(isOversize, peak, rates);
-  const surcharge = agedSurcharge(ageInDays, rates);
+  const base = rates.enableStorageFee ? baseStorageRate(isOversize, peak, rates) : 0;
+  const surcharge = rates.enableAgedSurcharge ? agedSurcharge(ageInDays, rates) : 0;
   const monthlyCost = quantity * cubicFeetPerUnit * (base + surcharge);
   const removalFeePerUnit = isOversize ? rates.removalOversize : rates.removalStandard;
   const totalRemovalCost = quantity * removalFeePerUnit;
@@ -204,7 +334,7 @@ export interface SkuSummary {
   projected12MFees: number;
   liquidationRecovery: number;
   removalCost: number;
-  urgencyScore: number;  // 1–10
+  urgencyScore: number;
   recommendedAction: "Hold" | "Discount" | "Outlet" | "Remove";
 }
 
@@ -233,8 +363,8 @@ export function computeSkuSummaries(
     const pts = computeScenarios(params);
     const last = pts[pts.length - 1];
     const peak = isPeakMonth(startMonth);
-    const base = baseStorageRate(false, peak, rates);
-    const surcharge = agedSurcharge(row.ageInDays, rates);
+    const base = rates.enableStorageFee ? baseStorageRate(false, peak, rates) : 0;
+    const surcharge = rates.enableAgedSurcharge ? agedSurcharge(row.ageInDays, rates) : 0;
     const monthlyFee = row.quantity * params.cubicFeetPerUnit * (base + surcharge);
 
     const totalValue = row.quantity * (row.currentPrice > 0 ? row.currentPrice : 20);
@@ -269,7 +399,6 @@ export function computeMetrics(
   points: ScenarioPoint[]
 ): SimulationMetrics {
   const last = points[points.length - 1];
-
   const optIdx = points.findIndex(p => p.aggressiveDiscount > p.doNothing);
   const optimalLiquidationDate = optIdx >= 0 ? points[optIdx].monthLabel : "Now";
 

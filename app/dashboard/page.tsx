@@ -1,6 +1,5 @@
 "use client";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/client";
@@ -15,6 +14,8 @@ import {
   type SimulationParams,
   type SkuSummary,
 } from "@/lib/feeEngine";
+import { useFeeRates } from "@/hooks/useFeeRates";
+import { useRegion } from "@/hooks/useRegion";
 import {
   applyMapping,
   aggregateBySku,
@@ -22,26 +23,30 @@ import {
   type ParsedCSV,
 } from "@/lib/csvParser";
 import type { ChatContext } from "@/app/api/ai/chat/route";
+import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import ManualInputForm from "@/components/dashboard/ManualInputForm";
 import FeeConfigPanel from "@/components/dashboard/FeeConfigPanel";
 import FileUploadZone from "@/components/dashboard/FileUploadZone";
 import ColumnMapper from "@/components/dashboard/ColumnMapper";
 import MetricRibbon from "@/components/dashboard/MetricRibbon";
-import SimulatorChart from "@/components/dashboard/SimulatorChart";
+import VerdictBanner from "@/components/dashboard/VerdictBanner";
+import InsightChart from "@/components/dashboard/InsightChart";
 import ExportBanner from "@/components/dashboard/ExportBanner";
 import BreakEvenPanel from "@/components/dashboard/BreakEvenPanel";
 import RemovalPlanner from "@/components/dashboard/RemovalPlanner";
 import MultiSkuTable from "@/components/dashboard/MultiSkuTable";
 import AIChat from "@/components/dashboard/AIChat";
-import Button from "@/components/ui/Button";
-import Card from "@/components/ui/Card";
-import ProfileDropdown from "@/components/ui/ProfileDropdown";
 
 declare global {
   interface Window {
     Razorpay: new (opts: Record<string, unknown>) => { open(): void };
   }
 }
+
+// ─── DEV OVERRIDE ────────────────────────────────────────────────────────────
+// Set false (or delete these two lines) before pushing to production.
+const DEV_UNLOCK_ALL = false;
+// ─────────────────────────────────────────────────────────────────────────────
 
 const NOW = new Date();
 
@@ -73,32 +78,44 @@ function loadRazorpay(): Promise<void> {
   });
 }
 
-type Tab = "manual" | "csv";
-
 function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const [user, setUser] = useState<User | null>(null);
-  const [isPremium, setIsPremium] = useState(false);
+  const [_isPremium, setIsPremium] = useState(false);
+  // DEV OVERRIDE: always true when DEV_UNLOCK_ALL is set — revert to `_isPremium` before push
+  const isPremium = DEV_UNLOCK_ALL || _isPremium;
+  const isLoggedIn = DEV_UNLOCK_ALL || !!user;
+
   const [authLoading, setAuthLoading] = useState(true);
   const [fullName, setFullName] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [feeRates, setFeeRates] = useState<FeeRates>(DEFAULT_FEE_RATES);
-  const [params, setParams] = useState<SimulationParams>(() => defaultParams(DEFAULT_FEE_RATES));
+  const { region } = useRegion();
+  const {
+    rates: feeRates,
+    setRates: setFeeRates,
+    saveRates,
+    regionDefaults,
+    regionName,
+    hasSaved,
+    clearSaved,
+  } = useFeeRates();
+  // Merge feeRates reactively via useMemo instead of a setState-in-effect
+  const [baseParams, setParams] = useState<SimulationParams>(() => defaultParams(DEFAULT_FEE_RATES));
+  const params = useMemo(() => ({ ...baseParams, rates: feeRates }), [baseParams, feeRates]);
+
   const [showFeeConfig, setShowFeeConfig] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>("manual");
   const [csv, setCsv] = useState<ParsedCSV | null>(null);
   const [mapping, setMapping] = useState<Partial<ColumnMapping>>({});
   const [skuLabel, setSkuLabel] = useState("Manual Entry");
   const [skuSummaries, setSkuSummaries] = useState<SkuSummary[]>([]);
-  const [aiModel, setAiModel] = useState("gpt-4o");
+  const aiModel = "gpt-4o";
 
-  useEffect(() => {
-    setParams((p) => ({ ...p, rates: feeRates }));
-  }, [feeRates]);
+  // Keep a stable ref so the upgrade-on-mount effect can call the latest version
+  // without being listed as a dependency (avoids the "used before declared" issue).
+  const handleUpgradeRef = useRef<() => Promise<void>>(async () => {});
 
-  // Load auth state and premium status from Supabase
   useEffect(() => {
     const supabase = createClient();
 
@@ -130,17 +147,27 @@ function DashboardContent() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Auto-trigger upgrade flow when redirected back from login with ?upgrade=1
+  // Auto-trigger upgrade when redirected back with ?upgrade=1
   useEffect(() => {
     if (searchParams.get("upgrade") === "1" && user && !authLoading) {
-      handleUpgrade();
+      handleUpgradeRef.current();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, authLoading]);
+  }, [user, authLoading, searchParams]);
 
+  // Save detected region to Supabase profile whenever it resolves
   useEffect(() => {
-    if (searchParams.get("tab") === "csv") setActiveTab("csv");
-  }, [searchParams]);
+    if (!user || !region.code || region.code === "US") return; // US is the default — skip unless truly resolved
+    const supabase = createClient();
+    supabase
+      .from("profiles")
+      .update({ region_code: region.code })
+      .eq("id", user.id)
+      .then(() => {});
+  }, [user, region.code]);
+
+  const handleLogin = useCallback(() => {
+    router.push(`/auth/login?next=/dashboard`);
+  }, [router]);
 
   const scenarios = useMemo(() => computeScenarios(params), [params]);
   const metrics = useMemo(() => computeMetrics(params, scenarios), [params, scenarios]);
@@ -164,7 +191,16 @@ function DashboardContent() {
     discountNet12M: scenarios[11]?.aggressiveDiscount ?? 0,
     outletNet12M: scenarios[11]?.amazonOutlet ?? 0,
     removalNet12M: scenarios[11]?.removalOrder ?? 0,
-  }), [params, metrics, scenarios, skuLabel]);
+    skuSummaries: skuSummaries.map((s) => ({
+      sku: s.sku,
+      quantity: s.quantity,
+      ageInDays: s.ageInDays,
+      monthlyFee: s.monthlyFee,
+      projected12MFees: s.projected12MFees,
+      urgencyScore: s.urgencyScore,
+      recommendedAction: s.recommendedAction,
+    })),
+  }), [params, metrics, scenarios, skuLabel, skuSummaries]);
 
   const handleApplyCSV = useCallback(() => {
     if (!csv) return;
@@ -208,11 +244,9 @@ function DashboardContent() {
         currency,
         order_id: orderId,
         name: "FBA Liquidation Simulator",
-        description: "Premium — $19/month",
+        description: "Premium Monthly",
         theme: { color: "#4f46e5" },
-        modal: {
-          ondismiss: () => {},
-        },
+        modal: { ondismiss: () => {} },
         handler: async (response: {
           razorpay_payment_id: string;
           razorpay_order_id: string;
@@ -240,6 +274,9 @@ function DashboardContent() {
     }
   }, [user, router]);
 
+  // Keep ref in sync so the mount effect always calls the latest version
+  useEffect(() => { handleUpgradeRef.current = handleUpgrade; }, [handleUpgrade]);
+
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -248,127 +285,110 @@ function DashboardContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Top nav */}
-      <header className="bg-white border-b border-slate-100 h-14 flex items-center px-6 gap-4 shrink-0">
-        <Link href="/" className="font-bold text-slate-800 tracking-tight text-sm">
-          FBA <span className="text-indigo-600">Liquidator</span>
-        </Link>
-        <span className="text-slate-200">|</span>
-        <span className="text-sm text-slate-500">Dashboard</span>
-        <div className="ml-auto flex items-center gap-3">
-          {isPremium ? (
-            <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">✓ Premium</span>
-          ) : (
-            <Button size="sm" onClick={handleUpgrade} disabled={authLoading}>
-              {authLoading ? "Loading…" : "Upgrade — $19/mo"}
-            </Button>
-          )}
-          {user ? (
-            <ProfileDropdown
-              user={user}
-              fullName={fullName}
-              avatarUrl={avatarUrl}
-              isPremium={isPremium}
-              onSignOut={handleSignOut}
-            />
-          ) : (
-            <Link href="/auth/login?next=/dashboard" className="text-xs text-slate-400 hover:text-slate-600">Sign in</Link>
-          )}
-        </div>
-      </header>
+    <div className="h-screen flex flex-col overflow-hidden bg-slate-50">
+      {/* ── HEADER ── */}
+      <DashboardHeader
+        isPremium={isPremium}
+        user={user}
+        fullName={fullName}
+        avatarUrl={avatarUrl}
+        authLoading={authLoading}
+        onUpgrade={handleUpgrade}
+        onSignOut={handleSignOut}
+      />
 
+      {/* ── BODY: sidebar + visualiser ── */}
       <div className="flex flex-1 overflow-hidden">
-        {/* ── LEFT SIDEBAR ── */}
-        <aside className="w-80 shrink-0 bg-white border-r border-slate-100 overflow-y-auto flex flex-col">
-          <div className="p-5 flex flex-col gap-6 flex-1">
-            <div className="flex gap-1 p-1 bg-slate-100 rounded-2xl">
-              {(["manual", "csv"] as Tab[]).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setActiveTab(t)}
-                  className={[
-                    "flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all",
-                    activeTab === t ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700",
-                  ].join(" ")}
-                >
-                  {t === "manual" ? "Manual Entry" : "Upload CSV"}
-                </button>
-              ))}
-            </div>
 
-            {activeTab === "manual" && (
-              <ManualInputForm params={params} onChange={setParams} />
-            )}
+        {/* ── SIDE PANEL (25%) ── */}
+        <aside className="w-[25%] shrink-0 flex flex-col bg-white border-r border-slate-100 overflow-hidden">
 
-            {activeTab === "csv" && (
-              <div className="flex flex-col gap-4">
-                <FileUploadZone isPremium={isPremium} onParsed={setCsv} onUpgradeClick={handleUpgrade} />
-                {csv && (
-                  <ColumnMapper csv={csv} mapping={mapping} onMappingChange={setMapping} onApply={handleApplyCSV} />
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Fee config + AI model selector */}
-          <div className="p-5 border-t border-slate-100 flex flex-col gap-3">
+          {/* Parameters — pinned, never scrolls */}
+          <div className="shrink-0 p-3 flex flex-col gap-2.5 border-b border-slate-100">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+              Parameters
+            </p>
+            <ManualInputForm params={params} onChange={setParams} currencySymbol={region.symbol} />
             <button
               type="button"
               onClick={() => setShowFeeConfig(true)}
-              className="w-full flex items-center justify-between px-4 py-2.5 rounded-2xl border border-slate-200 hover:bg-slate-50 transition-colors text-sm text-slate-600"
+              className="w-full flex items-center justify-between px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors text-xs text-slate-600"
             >
               <span>Configure Fee Rates</span>
-              <span className="text-slate-400 text-xs">⚙</span>
+              <span className="text-slate-400">⚙</span>
             </button>
-            {isPremium && (
-              <div className="flex items-center justify-between px-1">
-                <span className="text-xs text-slate-400">AI Model</span>
-                <select
-                  value={aiModel}
-                  onChange={e => setAiModel(e.target.value)}
-                  aria-label="AI model selection"
-                  className="text-xs text-slate-700 border border-slate-200 rounded-xl px-2 py-1.5 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                >
-                  <option value="gpt-4o">GPT-4o (Latest)</option>
-                  <option value="gpt-4o-mini">GPT-4o Mini (Fast)</option>
-                  <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo (Budget)</option>
-                </select>
-              </div>
+          </div>
+
+          {/* CSV section — takes remaining height, scrolls only when ColumnMapper is open */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-2.5">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+              CSV Import
+            </p>
+            <FileUploadZone
+              isPremium={isPremium}
+              onParsed={setCsv}
+              onUpgradeClick={handleUpgrade}
+            />
+            {csv && (
+              <ColumnMapper
+                csv={csv}
+                mapping={mapping}
+                onMappingChange={setMapping}
+                onApply={handleApplyCSV}
+              />
             )}
           </div>
         </aside>
 
-        {/* ── RIGHT WORKSPACE ── */}
-        <main className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
-          <MetricRibbon metrics={metrics} />
+        {/* ── VISUALISER (75%) ── */}
+        <main className="flex-1 overflow-y-auto p-6 pb-28 flex flex-col gap-5">
+          {/* 1. Metric badges */}
+          <MetricRibbon metrics={metrics} currency={region.currency} />
 
+          {/* 2. P&L verdict — clear bottom line for the seller */}
+          <VerdictBanner
+            scenarios={scenarios}
+            isLoggedIn={isLoggedIn}
+            isPremium={isPremium}
+            currency={region.currency}
+            onLoginClick={handleLogin}
+            onUpgradeClick={handleUpgrade}
+          />
+
+          {/* 3. Charts */}
+          <InsightChart
+            points={scenarios}
+            params={params}
+            isPremium={isPremium}
+            isLoggedIn={isLoggedIn}
+            skuLabel={skuLabel}
+            currencySymbol={region.symbol}
+            onUpgradeClick={handleUpgrade}
+            onLoginClick={handleLogin}
+          />
+
+          {/* 4. Insight cards — both premium-gated */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <BreakEvenPanel result={breakEven} currentDiscountPct={params.aggressiveDiscountPct} />
-            <RemovalPlanner plan={removalPlan} quantity={params.quantity} />
+            <BreakEvenPanel
+              result={breakEven}
+              currentDiscountPct={params.aggressiveDiscountPct}
+              isPremium={isPremium}
+              onUpgradeClick={handleUpgrade}
+            />
+            <RemovalPlanner
+              plan={removalPlan}
+              quantity={params.quantity}
+              isPremium={isPremium}
+              currency={region.currency}
+              onUpgradeClick={handleUpgrade}
+            />
           </div>
-
-          <Card elevated className="p-6 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="font-bold text-slate-800">
-                  {isPremium ? "Multi-Scenario Analysis" : "Holding Fee Projection"}
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5">Net cash position over 12 months · {skuLabel}</p>
-              </div>
-              {!isPremium && (
-                <Button size="sm" onClick={handleUpgrade}>Unlock All 4 Scenarios</Button>
-              )}
-            </div>
-            <SimulatorChart points={scenarios} isPremium={isPremium} />
-          </Card>
 
           {skuSummaries.length > 1 && (
             <MultiSkuTable
               skus={skuSummaries}
               isPremium={isPremium}
+              currency={region.currency}
               onSelectSku={handleSelectSku}
               model={aiModel}
             />
@@ -386,7 +406,17 @@ function DashboardContent() {
       </div>
 
       {showFeeConfig && (
-        <FeeConfigPanel rates={feeRates} onChange={setFeeRates} onClose={() => setShowFeeConfig(false)} />
+        <FeeConfigPanel
+          rates={feeRates}
+          onChange={setFeeRates}
+          onClose={() => setShowFeeConfig(false)}
+          onSave={saveRates}
+          onClearSaved={clearSaved}
+          regionDefaults={regionDefaults}
+          regionName={regionName}
+          currencySymbol={region.symbol}
+          hasSaved={hasSaved}
+        />
       )}
 
       <AIChat context={chatContext} isPremium={isPremium} onUpgradeClick={handleUpgrade} />
