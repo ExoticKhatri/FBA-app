@@ -17,9 +17,9 @@ export const REGION_PRICES: Record<RegionCode, RegionPrice> = {
     name: 'United States',
     currency: 'USD',
     symbol: '$',
-    amount: 26,
-    amountSmallest: 2600,
-    displayPrice: '$26',
+    amount: 19,
+    amountSmallest: 1900,
+    displayPrice: '$19',
     displayUnit: 'per month',
   },
   IN: {
